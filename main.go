@@ -49,6 +49,51 @@ type IdeaResponse struct {
 	Description string `json:"description"`
 }
 
+func boxToResponse(box Box) BoxResponse {
+	ideaResponses := make([]IdeaResponse, len(box.Ideas))
+
+	for i, idea := range box.Ideas {
+		ideaResponses[i] = ideaToResponse(idea)
+	}
+
+	return BoxResponse{
+		ID:          box.ID,
+		Title:       box.Title,
+		Description: box.Description,
+		Ideas:       ideaResponses,
+	}
+}
+
+func ideaToResponse(idea Idea) IdeaResponse {
+	return IdeaResponse{
+		ID:          idea.ID,
+		Title:       idea.Title,
+		Description: idea.Description,
+	}
+}
+
+func getBoxByID(c *gin.Context, id string) (*Box, bool) {
+	var box Box
+
+	if err := db.Preload("Ideas").First(&box, "id = ?", id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "box not found"})
+		return nil, false
+	}
+
+	return &box, true
+}
+
+func getIdeaByID(c *gin.Context, ideaID string, boxID string) (*Idea, bool) {
+	var idea Idea
+
+	if err := db.Where("id = ? AND box_id = ?", ideaID, boxID).First(&idea).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "idea not found"})
+		return nil, false
+	}
+
+	return &idea, true
+}
+
 func main() {
 	var err error
 	db, err = gorm.Open(sqlite.Open("idea-box.db"), &gorm.Config{})
@@ -77,31 +122,15 @@ func main() {
 
 func getBoxes(c *gin.Context) {
 	var boxes []Box
-
 	result := db.Preload("Ideas").Find(&boxes)
 	if result.Error != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": result.Error.Error()})
 		return
 	}
 
-	responses := make([]BoxResponse, 0)
-
-	for _, box := range boxes {
-		ideaResponses := make([]IdeaResponse, 0)
-		for _, idea := range box.Ideas {
-			ideaResponses = append(ideaResponses, IdeaResponse{
-				ID:          idea.ID,
-				Title:       idea.Title,
-				Description: idea.Description,
-			})
-		}
-
-		responses = append(responses, BoxResponse{
-			ID:          box.ID,
-			Title:       box.Title,
-			Description: box.Description,
-			Ideas:       ideaResponses,
-		})
+	responses := make([]BoxResponse, len(boxes))
+	for i, box := range boxes {
+		responses[i] = boxToResponse(box)
 	}
 
 	c.JSON(http.StatusOK, responses)
@@ -109,31 +138,13 @@ func getBoxes(c *gin.Context) {
 
 func getBox(c *gin.Context) {
 	id := c.Param("id")
-	var box Box
 
-	result := db.Preload("Ideas").First(&box, "id = ?", id)
-	if result.Error != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "box not found"})
+	box, ok := getBoxByID(c, id)
+	if !ok {
 		return
 	}
 
-	ideaResponses := make([]IdeaResponse, 0)
-	for _, idea := range box.Ideas {
-		ideaResponses = append(ideaResponses, IdeaResponse{
-			ID:          idea.ID,
-			Title:       idea.Title,
-			Description: idea.Description,
-		})
-	}
-
-	response := BoxResponse{
-		ID:          box.ID,
-		Title:       box.Title,
-		Description: box.Description,
-		Ideas:       ideaResponses,
-	}
-
-	c.JSON(http.StatusOK, response)
+	c.JSON(http.StatusOK, boxToResponse(*box))
 }
 
 func createBox(c *gin.Context) {
@@ -151,14 +162,7 @@ func createBox(c *gin.Context) {
 		return
 	}
 
-	response := BoxResponse{
-		ID:          box.ID,
-		Title:       box.Title,
-		Description: box.Description,
-		Ideas:       []IdeaResponse{},
-	}
-
-	c.JSON(http.StatusCreated, response)
+	c.JSON(http.StatusCreated, boxToResponse(box))
 }
 
 func updateBox(c *gin.Context) {
@@ -170,44 +174,31 @@ func updateBox(c *gin.Context) {
 		return
 	}
 
-	var box Box
-	if err := db.First(&box, "id = ?", id).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "box not found"})
+	box, ok := getBoxByID(c, id)
+	if !ok {
 		return
 	}
 
-	result := db.Model(&box).Updates(BoxRequest{
-		Title:       request.Title,
-		Description: request.Description,
-	})
-
+	result := db.Model(box).Updates(request)
 	if result.Error != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": result.Error.Error()})
 		return
 	}
 
-	response := BoxResponse{
-		ID:          box.ID,
-		Title:       box.Title,
-		Description: box.Description,
-		Ideas:       []IdeaResponse{},
-	}
-
-	c.JSON(http.StatusOK, response)
+	c.JSON(http.StatusOK, boxToResponse(*box))
 }
 
 func deleteBox(c *gin.Context) {
 	id := c.Param("id")
 
-	var box Box
-	if err := db.First(&box, "id = ?", id).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "box not found"})
+	box, ok := getBoxByID(c, id)
+	if !ok {
 		return
 	}
 
 	db.Where("box_id = ?", id).Delete(&Idea{})
 
-	result := db.Delete(&box)
+	result := db.Delete(box)
 	if result.Error != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": result.Error.Error()})
 		return
@@ -219,26 +210,22 @@ func deleteBox(c *gin.Context) {
 func getBoxIdeas(c *gin.Context) {
 	boxID := c.Param("id")
 
-	var box Box
-	if err := db.First(&box, "id = ?", boxID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "box not found"})
+	_, ok := getBoxByID(c, boxID)
+	if !ok {
 		return
 	}
 
 	var ideas []Idea
+
 	result := db.Where("box_id = ?", boxID).Find(&ideas)
 	if result.Error != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": result.Error.Error()})
 		return
 	}
 
-	responses := make([]IdeaResponse, 0)
-	for _, idea := range ideas {
-		responses = append(responses, IdeaResponse{
-			ID:          idea.ID,
-			Title:       idea.Title,
-			Description: idea.Description,
-		})
+	responses := make([]IdeaResponse, len(ideas))
+	for i, idea := range ideas {
+		responses[i] = ideaToResponse(idea)
 	}
 
 	c.JSON(http.StatusOK, responses)
@@ -248,25 +235,17 @@ func getBoxIdea(c *gin.Context) {
 	boxID := c.Param("id")
 	ideaID := c.Param("ideaId")
 
-	var box Box
-	if err := db.First(&box, "id = ?", boxID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "box not found"})
+	_, ok := getBoxByID(c, boxID)
+	if !ok {
 		return
 	}
 
-	var idea Idea
-	if err := db.Where("id = ? AND box_id = ?", ideaID, boxID).First(&idea).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "idea not found"})
+	idea, ok := getIdeaByID(c, ideaID, boxID)
+	if !ok {
 		return
 	}
 
-	response := IdeaResponse{
-		ID:          idea.ID,
-		Title:       idea.Title,
-		Description: idea.Description,
-	}
-
-	c.JSON(http.StatusOK, response)
+	c.JSON(http.StatusOK, ideaToResponse(*idea))
 }
 
 func createBoxIdea(c *gin.Context) {
@@ -278,9 +257,8 @@ func createBoxIdea(c *gin.Context) {
 		return
 	}
 
-	var box Box
-	if err := db.First(&box, "id = ?", boxID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "box not found"})
+	box, ok := getBoxByID(c, boxID)
+	if !ok {
 		return
 	}
 
@@ -296,13 +274,7 @@ func createBoxIdea(c *gin.Context) {
 		return
 	}
 
-	response := IdeaResponse{
-		ID:          idea.ID,
-		Title:       idea.Title,
-		Description: idea.Description,
-	}
-
-	c.JSON(http.StatusCreated, response)
+	c.JSON(http.StatusCreated, ideaToResponse(idea))
 }
 
 func updateBoxIdea(c *gin.Context) {
@@ -315,54 +287,40 @@ func updateBoxIdea(c *gin.Context) {
 		return
 	}
 
-	var box Box
-	if err := db.First(&box, "id = ?", boxID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "box not found"})
+	_, ok := getBoxByID(c, boxID)
+	if !ok {
 		return
 	}
 
-	var idea Idea
-	if err := db.Where("id = ? AND box_id = ?", ideaID, boxID).First(&idea).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "idea not found"})
+	idea, ok := getIdeaByID(c, ideaID, boxID)
+	if !ok {
 		return
 	}
 
-	result := db.Model(&idea).Updates(IdeaRequest{
-		Title:       request.Title,
-		Description: request.Description,
-	})
-
+	result := db.Model(idea).Updates(request)
 	if result.Error != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": result.Error.Error()})
 		return
 	}
 
-	response := IdeaResponse{
-		ID:          idea.ID,
-		Title:       idea.Title,
-		Description: idea.Description,
-	}
-
-	c.JSON(http.StatusOK, response)
+	c.JSON(http.StatusOK, ideaToResponse(*idea))
 }
 
 func deleteBoxIdea(c *gin.Context) {
 	boxID := c.Param("id")
 	ideaID := c.Param("ideaId")
 
-	var box Box
-	if err := db.First(&box, "id = ?", boxID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "box not found"})
+	_, ok := getBoxByID(c, boxID)
+	if !ok {
 		return
 	}
 
-	var idea Idea
-	if err := db.Where("id = ? AND box_id = ?", ideaID, boxID).First(&idea).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "idea not found"})
+	idea, ok := getIdeaByID(c, ideaID, boxID)
+	if !ok {
 		return
 	}
 
-	result := db.Delete(&idea)
+	result := db.Delete(idea)
 	if result.Error != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": result.Error.Error()})
 		return
