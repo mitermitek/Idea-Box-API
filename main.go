@@ -111,7 +111,7 @@ func getBox(c *gin.Context) {
 	id := c.Param("id")
 	var box Box
 
-	result := db.Preload("Ideas").First(&box, id)
+	result := db.Preload("Ideas").First(&box, "id = ?", id)
 	if result.Error != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "box not found"})
 		return
@@ -171,7 +171,7 @@ func updateBox(c *gin.Context) {
 	}
 
 	var box Box
-	if err := db.First(&box, id).Error; err != nil {
+	if err := db.First(&box, "id = ?", id).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "box not found"})
 		return
 	}
@@ -200,7 +200,7 @@ func deleteBox(c *gin.Context) {
 	id := c.Param("id")
 
 	var box Box
-	if err := db.First(&box, id).Error; err != nil {
+	if err := db.First(&box, "id = ?", id).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "box not found"})
 		return
 	}
@@ -220,7 +220,7 @@ func getBoxIdeas(c *gin.Context) {
 	boxID := c.Param("id")
 
 	var box Box
-	if err := db.First(&box, boxID).Error; err != nil {
+	if err := db.First(&box, "id = ?", boxID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "box not found"})
 		return
 	}
@@ -249,7 +249,7 @@ func getBoxIdea(c *gin.Context) {
 	ideaID := c.Param("ideaId")
 
 	var box Box
-	if err := db.First(&box, boxID).Error; err != nil {
+	if err := db.First(&box, "id = ?", boxID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "box not found"})
 		return
 	}
@@ -279,7 +279,7 @@ func createBoxIdea(c *gin.Context) {
 	}
 
 	var box Box
-	if err := db.First(&box, boxID).Error; err != nil {
+	if err := db.First(&box, "id = ?", boxID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "box not found"})
 		return
 	}
@@ -316,7 +316,7 @@ func updateBoxIdea(c *gin.Context) {
 	}
 
 	var box Box
-	if err := db.First(&box, boxID).Error; err != nil {
+	if err := db.First(&box, "id = ?", boxID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "box not found"})
 		return
 	}
@@ -351,7 +351,7 @@ func deleteBoxIdea(c *gin.Context) {
 	ideaID := c.Param("ideaId")
 
 	var box Box
-	if err := db.First(&box, boxID).Error; err != nil {
+	if err := db.First(&box, "id = ?", boxID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "box not found"})
 		return
 	}
