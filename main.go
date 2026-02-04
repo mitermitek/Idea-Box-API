@@ -13,7 +13,7 @@ var db *gorm.DB
 
 type Box struct {
 	ID          uint
-	Title       string
+	Title       string `gorm:"unique"`
 	Description string
 	Ideas       []Idea
 }
@@ -94,6 +94,22 @@ func getIdeaByID(c *gin.Context, ideaID string, boxID string) (*Idea, bool) {
 	return &idea, true
 }
 
+func checkBoxTitleUniqueness(c *gin.Context, title string, excludeID *string) bool {
+	var existingBox Box
+	query := db.Where("title = ?", title)
+
+	if excludeID != nil {
+		query = query.Where("id != ?", *excludeID)
+	}
+
+	if err := query.First(&existingBox).Error; err == nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "box title must be unique"})
+		return false
+	}
+
+	return true
+}
+
 func main() {
 	var err error
 	db, err = gorm.Open(sqlite.Open("idea-box.db"), &gorm.Config{})
@@ -154,6 +170,10 @@ func createBox(c *gin.Context) {
 		return
 	}
 
+	if !checkBoxTitleUniqueness(c, request.Title, nil) {
+		return
+	}
+
 	box := Box{Title: request.Title, Description: request.Description}
 	result := db.Create(&box)
 
@@ -176,6 +196,10 @@ func updateBox(c *gin.Context) {
 
 	box, ok := getBoxByID(c, id)
 	if !ok {
+		return
+	}
+
+	if !checkBoxTitleUniqueness(c, request.Title, &id) {
 		return
 	}
 
